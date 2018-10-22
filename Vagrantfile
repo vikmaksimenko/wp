@@ -16,32 +16,66 @@ apt install -y apache2 php libapache2-mod-php php-mysql
 sed -i 's/DirectoryIndex index\.html index\.cgi index\.pl index\.php/DirectoryIndex index\.php index\.html index\.cgi index\.pl/g' /etc/apache2/mods-enabled/dir.conf
 systemctl restart apache2 && systemctl status apache2
 
+# TODO: Add SSL/TLS setup
+# https://www.digitalocean.com/community/tutorials/how-to-create-a-self-signed-ssl-certificate-for-apache-in-ubuntu-18-04
+
 # Install MySQL
 echo "mysql-server mysql-server/root_password password root" | sudo debconf-set-selections
 echo "mysql-server mysql-server/root_password_again password root" | sudo debconf-set-selections
 apt-get -y install mysql-server
-
-# Secure MySQL
-# Make sure that NOBODY can access the server without a password
-mysql -e "UPDATE mysql.user SET Password = PASSWORD('CHANGEME') WHERE User = 'root'"
-# Kill the anonymous users
-mysql -e "DROP USER ''@'localhost'"
-# Because our hostname varies we'll use some Bash magic here.
-mysql -e "DROP USER ''@'$(hostname)'"
-# Kill off the demo database
-mysql -e "DROP DATABASE test"
-# Make our changes take effect
-mysql -e "FLUSH PRIVILEGES"
-
-mysql -uroot -p -e 'USE mysql; UPDATE `user` SET `Host`="%" WHERE `User`="root" AND `Host`="localhost"; DELETE FROM `user` WHERE `Host` != "%" AND `User`="root"; FLUSH PRIVILEGES;'
-
 service mysql restart
 
-# TODO: Add SSL/TLS setup
-# https://www.digitalocean.com/community/tutorials/how-to-create-a-self-signed-ssl-certificate-for-apache-in-ubuntu-18-04
+# Configure database
+mysql -u root -proot -e "CREATE DATABASE wordpress DEFAULT CHARACTER SET utf8 COLLATE utf8_unicode_ci;"
+mysql -u root -proot -e "GRANT ALL ON wordpress.* TO 'wordpressuser'@'localhost' IDENTIFIED BY 'password';"
+mysql -u root -proot -e "FLUSH PRIVILEGES;"
 
+# Installing Additional PHP Extensions
+apt update
+apt install -y php-curl php-gd php-mbstring php-xml php-xmlrpc php-soap php-intl php-zip
+systemctl restart apache2
 
+# Set /etc/apache2/sites-available/wordpress.conf
+cat >/etc/apache2/sites-available/wordpress.conf <<EOL
+<VirtualHost *:80>
+        ServerName 127.0.0.1
+        ServerAdmin webmaster@localhost
+        DocumentRoot /var/www/html
 
+        ErrorLog ${APACHE_LOG_DIR}/error.log
+        CustomLog ${APACHE_LOG_DIR}/access.log combined
+
+        <Directory /var/www/wordpress/>
+            AllowOverride All
+        </Directory>
+
+</VirtualHost>
+
+# vim: syntax=apache ts=4 sw=4 sts=4 sr noet
+EOL
+
+cat /etc/apache2/sites-available/wordpress.conf
+a2enmod rewrite
+apache2ctl configtest
+systemctl restart apache2
+
+# Downloading WordPress
+pushd /tmp
+curl -O https://wordpress.org/latest.tar.gz
+tar xzvf latest.tar.gz
+popd
+
+touch /tmp/wordpress/.htaccess
+cp /tmp/wordpress/wp-config-sample.php /tmp/wordpress/wp-config.php
+mkdir /tmp/wordpress/wp-content/upgrade
+cp -a /tmp/wordpress/. /var/www/wordpress
+
+# Configuring the WordPress Directory
+chown -R www-data:www-data /var/www/wordpress
+find /var/www/wordpress/ -type d -exec chmod 750 {} \\\;
+find /var/www/wordpress/ -type f -exec chmod 640 {} \\\;
+
+curl -s https://api.wordpress.org/secret-key/1.1/salt/
 
 set +x
 SCRIPT
