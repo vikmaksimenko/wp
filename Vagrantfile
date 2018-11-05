@@ -6,7 +6,6 @@
 # https://www.digitalocean.com/community/tutorials/how-to-install-wordpress-with-lamp-on-ubuntu-18-04
 
 $script = <<-SCRIPT
-set -x
 
 # Update
 apt-get update && apt-get upgrade
@@ -36,11 +35,11 @@ apt install -y php-curl php-gd php-mbstring php-xml php-xmlrpc php-soap php-intl
 systemctl restart apache2
 
 # Set /etc/apache2/sites-available/wordpress.conf
-cat >/etc/apache2/sites-available/wordpress.conf <<EOL
+mv /etc/apache2/sites-available/000-default.conf /etc/apache2/sites-available/000-default.conf.bak 
+cat >/etc/apache2/sites-available/000-default.conf <<EOL
 <VirtualHost *:80>
-        ServerName 127.0.0.1
         ServerAdmin webmaster@localhost
-        DocumentRoot /var/www/html
+        DocumentRoot /var/www/wordpress
 
         ErrorLog ${APACHE_LOG_DIR}/error.log
         CustomLog ${APACHE_LOG_DIR}/access.log combined
@@ -54,7 +53,6 @@ cat >/etc/apache2/sites-available/wordpress.conf <<EOL
 # vim: syntax=apache ts=4 sw=4 sts=4 sr noet
 EOL
 
-cat /etc/apache2/sites-available/wordpress.conf
 a2enmod rewrite
 apache2ctl configtest
 systemctl restart apache2
@@ -62,22 +60,35 @@ systemctl restart apache2
 # Downloading WordPress
 pushd /tmp
 curl -O https://wordpress.org/latest.tar.gz
-tar xzvf latest.tar.gz
+tar xzf latest.tar.gz
 popd
 
 touch /tmp/wordpress/.htaccess
 cp /tmp/wordpress/wp-config-sample.php /tmp/wordpress/wp-config.php
 mkdir /tmp/wordpress/wp-content/upgrade
-cp -a /tmp/wordpress/. /var/www/wordpress
+cp -a /tmp/wordpress /var/www/wordpress
 
 # Configuring the WordPress Directory
 chown -R www-data:www-data /var/www/wordpress
 find /var/www/wordpress/ -type d -exec chmod 750 {} \\\;
 find /var/www/wordpress/ -type f -exec chmod 640 {} \\\;
 
-curl -s https://api.wordpress.org/secret-key/1.1/salt/
+# Setting up the WordPress Configuration File
+file="/var/www/wordpress/wp-config.php"
+cp "$file" "$file.bak"
+sed -i 's/database_name_here/wordpress/g' "$file"
+sed -i 's/username_here/wordpressuser/g' "$file"
+sed -i 's/password_here/password/g' "$file"
 
-set +x
+phrase=$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 64) ; 
+sed -i "s/put your unique phrase here/$phrase/" $file
+echo "define('FS_METHOD', 'direct');" >> "$file"
+
+cat "$file"
+
+# Completing the Installation Through the Web Interface
+echo "Open http://localhost:8080"
+
 SCRIPT
 
 # All Vagrant configuration is done below. The "2" in Vagrant.configure
@@ -145,3 +156,5 @@ Vagrant.configure("2") do |config|
   # documentation for more information about their specific syntax and use.
   config.vm.provision "shell", inline: $script
 end
+
+
